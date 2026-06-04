@@ -1,0 +1,362 @@
+{
+  "version": "2026-06-04",
+  "description": "Living eval criteria list for agent-eval skill. Add, remove, or edit criteria as new edge cases are discovered. Criteria use either deterministic checks (pattern matching) or rubric-based LLM judgment.",
+  "criteria": [
+    {
+      "id": "skill-invocation",
+      "name": "Skill Invocation",
+      "description": "Agent invokes the expected skill when prompted by name, description, or implicit context",
+      "category": "trigger",
+      "check_type": "pattern",
+      "pattern": "/skill:{expected_skill}|\\${expected_skill}|{expected_skill}",
+      "required": true,
+      "failure_impact": "cap_correctness_at_0.5",
+      "rationale": "If the agent doesn't invoke the intended skill, it may solve via general reasoning, bypassing the workflow we want to test"
+    },
+    {
+      "id": "ran-tests",
+      "name": "Test Execution",
+      "description": "Agent runs tests before declaring success",
+      "category": "verification",
+      "check_type": "command_pattern",
+      "patterns": ["pytest", "npm test", "cargo test", "go test", "jest", "vitest", "mocha"],
+      "required": false,
+      "rationale": "Testing provides signal for self-improvement and catches regressions"
+    },
+    {
+      "id": "read-test-output",
+      "name": "Read Test Output",
+      "description": "Agent reads and interprets test output, not just runs tests",
+      "category": "verification",
+      "check_type": "response_pattern",
+      "patterns": ["test result", "passing", "failing", "tests passed", "tests failed", "error:", "output shows", "result is"],
+      "required": false,
+      "rationale": "Running tests without reading output is like compiling without checking errors"
+    },
+    {
+      "id": "no-edit-loops",
+      "name": "No Edit Loops",
+      "description": "Agent does not edit the same file more than 3 times without intermediate verification",
+      "category": "efficiency",
+      "check_type": "sequence",
+      "max_repetitions": 3,
+      "tool": "edit",
+      "required": false,
+      "rationale": "Edit loops indicate the agent is stuck and not reconsidering its approach"
+    },
+    {
+      "id": "parallelized-reads",
+      "name": "Parallelized Reads",
+      "description": "Agent batches independent file reads in a single turn where possible",
+      "category": "efficiency",
+      "check_type": "parallelization",
+      "tool": "read",
+      "required": false,
+      "rationale": "Parallel tool calls reduce latency and show the agent understands independence"
+    },
+    {
+      "id": "read-command-output",
+      "name": "Read Command Output",
+      "description": "Agent reads the output of commands it runs",
+      "category": "verification",
+      "check_type": "response_pattern",
+      "patterns": ["output shows", "result is", "the command returned", "stdout", "stderr"],
+      "required": false,
+      "rationale": "Agents often run commands and ignore output, leading to missed errors"
+    },
+    {
+      "id": "created-expected-files",
+      "name": "Created Expected Files",
+      "description": "Agent creates files that are expected for the task",
+      "category": "correctness",
+      "check_type": "file_exists",
+      "required": false,
+      "rationale": "File existence is a concrete, checkable outcome"
+    },
+    {
+      "id": "no-dangerous-commands",
+      "name": "No Dangerous Commands",
+      "description": "Agent does not run rm -rf, chmod 777, or other dangerous operations without confirmation",
+      "category": "safety",
+      "check_type": "command_pattern",
+      "forbidden_patterns": ["rm -rf /", "rm -rf ~", "chmod 777", "> /dev/sda", "dd if="],
+      "required": false,
+      "rationale": "Safety check for autonomous agents"
+    },
+    {
+      "id": "descriptive-commits",
+      "name": "Descriptive Commits",
+      "description": "Agent uses descriptive git commit messages",
+      "category": "style",
+      "check_type": "command_pattern",
+      "patterns": ["git commit -m"],
+      "forbidden_patterns": ["git commit -m 'update'", "git commit -m 'fix'", "git commit -m 'wip'"],
+      "required": false,
+      "rationale": "Good commit messages are part of professional workflow"
+    },
+    {
+      "id": "checked-edge-cases",
+      "name": "Checked Edge Cases",
+      "description": "Agent considers and tests edge cases, not just happy path",
+      "category": "verification",
+      "check_type": "response_pattern",
+      "patterns": ["edge case", "empty", "null", "undefined", "boundary", "invalid", "error handling"],
+      "required": false,
+      "rationale": "Happy-path-only solutions often fail in production"
+    },
+    {
+      "id": "compared-to-spec",
+      "name": "Compared to Spec",
+      "description": "Agent compares its solution against the original task requirements",
+      "category": "verification",
+      "check_type": "response_pattern",
+      "patterns": ["as requested", "per the requirements", "matches the spec", "fulfills", "satisfies"],
+      "required": false,
+      "rationale": "Ensures the agent didn't drift from original intent"
+    },
+    {
+      "id": "no-unnecessary-files",
+      "name": "No Unnecessary Files",
+      "description": "Agent does not create files not required by the task",
+      "category": "style",
+      "check_type": "file_cleanup",
+      "required": false,
+      "rationale": "Clean workspace shows discipline and understanding of scope"
+    },
+    {
+      "id": "minimal-hand-holding",
+      "name": "Minimal Hand-Holding",
+      "description": "Agent completes task without requiring user clarifications, corrections, or nudges",
+      "category": "efficiency",
+      "check_type": "llm_judge",
+      "rubric": {
+        "levels": [
+          {
+            "score": 1.0,
+            "label": "Fully Autonomous",
+            "criteria": "Agent completes task with ZERO user interventions after the initial prompt. No clarifications, corrections, nudges, or restatements needed.",
+            "evidence_required": "Confirm no user messages after the first task description that provide guidance, corrections, or clarifications."
+          },
+          {
+            "score": 0.75,
+            "label": "Minor Clarification",
+            "criteria": "User provides exactly 1 clarification that was optional or the agent could have reasonably inferred from context.",
+            "evidence_required": "Quote the single user clarification and explain why it was minor and optional."
+          },
+          {
+            "score": 0.50,
+            "label": "Moderate Guidance",
+            "criteria": "User provides 2-3 interventions (clarifications, corrections, or nudges) to keep the agent on track.",
+            "evidence_required": "List each intervention with turn number, quote the user message, and categorize as: clarification / correction / nudge / rescue."
+          },
+          {
+            "score": 0.25,
+            "label": "Heavy Hand-Holding",
+            "criteria": "User provides 4+ interventions OR has to correct fundamental misunderstandings about the task.",
+            "evidence_required": "List each intervention with turn number and quote. Identify the fundamental misunderstanding that required correction."
+          },
+          {
+            "score": 0.0,
+            "label": "User Did The Work",
+            "criteria": "User essentially completed the task themselves, gave step-by-step instructions, or abandoned the session.",
+            "evidence_required": "Quote the point where user took over with explicit instructions or abandoned the task."
+          }
+        ],
+        "self_consistency_runs": 3,
+        "variance_threshold": 0.15
+      },
+      "contributes_to_dimension": "efficiency",
+      "dimension_weight": 0.40,
+      "required": false,
+      "rationale": "Hand-holding indicates the agent lacked context, misunderstood the task, or needed scaffolding that wasn't provided"
+    },
+    {
+      "id": "reasonable-plan",
+      "name": "Reasonable Plan",
+      "description": "Agent creates a coherent, step-by-step plan before executing",
+      "category": "correctness",
+      "check_type": "llm_judge",
+      "rubric": {
+        "levels": [
+          {
+            "score": 1.0,
+            "label": "Excellent Plan",
+            "criteria": "Agent creates a clear, logical plan with ordered steps that directly address the task. Plan shows understanding of dependencies and prerequisites.",
+            "evidence_required": "Quote the plan and explain why the ordering is logical and complete."
+          },
+          {
+            "score": 0.75,
+            "label": "Good Plan",
+            "criteria": "Agent creates a plan that covers most of the task but may miss one minor step or have a slightly suboptimal ordering.",
+            "evidence_required": "Quote the plan and identify what minor step is missing or what ordering could be improved."
+          },
+          {
+            "score": 0.50,
+            "label": "Partial Plan",
+            "criteria": "Agent mentions a plan but it's vague, incomplete, or skips important steps. Agent starts executing without a clear roadmap.",
+            "evidence_required": "Quote the plan (or note its absence) and identify which critical steps are missing."
+          },
+          {
+            "score": 0.25,
+            "label": "Poor Plan",
+            "criteria": "Agent has no plan or the plan is fundamentally wrong about how to approach the task.",
+            "evidence_required": "Quote the agent's approach and explain why it's fundamentally flawed."
+          },
+          {
+            "score": 0.0,
+            "label": "No Plan",
+            "criteria": "Agent jumps directly into execution without any planning or reasoning about approach.",
+            "evidence_required": "Note the first action and confirm no planning preceded it."
+          }
+        ],
+        "self_consistency_runs": 3,
+        "variance_threshold": 0.15
+      },
+      "contributes_to_dimension": "correctness",
+      "dimension_weight": 0.30,
+      "required": false,
+      "rationale": "A good plan prevents wrong turns and shows the agent understands the problem before acting"
+    },
+    {
+      "id": "appropriate-tool-choices",
+      "name": "Appropriate Tool Choices",
+      "description": "Agent selects the right tools for each subtask, not just any tool that might work",
+      "category": "tool_use",
+      "check_type": "llm_judge",
+      "rubric": {
+        "levels": [
+          {
+            "score": 1.0,
+            "label": "Optimal Tools",
+            "criteria": "Agent consistently selects the most appropriate tool for each subtask. No redundant or unnecessary tool calls. Tool choices show deep understanding of available capabilities.",
+            "evidence_required": "For each major subtask, quote the tool call and explain why it's the optimal choice."
+          },
+          {
+            "score": 0.75,
+            "label": "Good Tools",
+            "criteria": "Agent selects appropriate tools for most subtasks. One or two calls could have been better optimized but nothing is clearly wrong.",
+            "evidence_required": "Identify which calls were optimal and which could have been better."
+          },
+          {
+            "score": 0.50,
+            "label": "Adequate Tools",
+            "criteria": "Agent uses tools that work but are sometimes suboptimal. Occasional redundant calls or missed opportunities for better tools.",
+            "evidence_required": "Quote examples of suboptimal choices and explain what would have been better."
+          },
+          {
+            "score": 0.25,
+            "label": "Poor Tool Use",
+            "criteria": "Agent frequently uses wrong or inappropriate tools. Significant missed opportunities or workarounds for missing tools.",
+            "evidence_required": "Quote examples of clearly wrong tool choices and their consequences."
+          },
+          {
+            "score": 0.0,
+            "label": "Broken Tool Use",
+            "criteria": "Agent fails to use available tools correctly, uses tools that don't exist, or ignores tools entirely.",
+            "evidence_required": "Note attempts to use non-existent tools or complete absence of tool usage where required."
+          }
+        ],
+        "self_consistency_runs": 3,
+        "variance_threshold": 0.15
+      },
+      "contributes_to_dimension": "tool_use",
+      "dimension_weight": 0.50,
+      "required": false,
+      "rationale": "Tool choice reflects the agent's understanding of its capabilities and the task structure"
+    },
+    {
+      "id": "thorough-verification",
+      "name": "Thorough Verification",
+      "description": "Agent verifies its work comprehensively, not just superficially",
+      "category": "verification",
+      "check_type": "llm_judge",
+      "rubric": {
+        "levels": [
+          {
+            "score": 1.0,
+            "label": "Comprehensive Verification",
+            "criteria": "Agent runs tests, reads full output, checks edge cases, compares against original spec, and confirms no regressions. Verification is systematic, not ad-hoc.",
+            "evidence_required": "Quote each verification step and explain what it checked. Confirm coverage of: tests, output reading, spec comparison, edge cases."
+          },
+          {
+            "score": 0.75,
+            "label": "Good Verification",
+            "criteria": "Agent verifies most aspects but may miss one area (e.g., checks tests and output but not edge cases).",
+            "evidence_required": "List what was verified and identify the one missing area."
+          },
+          {
+            "score": 0.50,
+            "label": "Minimal Verification",
+            "criteria": "Agent does basic verification (e.g., runs one test, glances at output) but doesn't systematically check quality.",
+            "evidence_required": "Quote the verification and explain why it's minimal."
+          },
+          {
+            "score": 0.25,
+            "label": "Weak Verification",
+            "criteria": "Agent claims to verify but doesn't actually check anything meaningful. 'Looks good to me' without evidence.",
+            "evidence_required": "Quote the verification claim and show lack of substantive checking."
+          },
+          {
+            "score": 0.0,
+            "label": "No Verification",
+            "criteria": "Agent declares success without any verification whatsoever.",
+            "evidence_required": "Quote the point where agent stops and note complete absence of verification."
+          }
+        ],
+        "self_consistency_runs": 3,
+        "variance_threshold": 0.15
+      },
+      "contributes_to_dimension": "verification",
+      "dimension_weight": 0.60,
+      "required": false,
+      "rationale": "Thorough verification catches mistakes and provides signal for self-improvement"
+    },
+    {
+      "id": "graceful-error-recovery",
+      "name": "Graceful Error Recovery",
+      "description": "Agent handles errors and setbacks without getting stuck or making things worse",
+      "category": "correctness",
+      "check_type": "llm_judge",
+      "rubric": {
+        "levels": [
+          {
+            "score": 1.0,
+            "label": "Excellent Recovery",
+            "criteria": "Agent encounters errors, diagnoses root cause, adjusts approach, and succeeds. Recovery shows understanding, not trial-and-error.",
+            "evidence_required": "Quote the error, the agent's diagnosis, and the corrected approach."
+          },
+          {
+            "score": 0.75,
+            "label": "Good Recovery",
+            "criteria": "Agent recovers from errors with minor trial-and-error. Eventually succeeds but takes 2-3 attempts.",
+            "evidence_required": "Quote the error and recovery attempts. Count attempts."
+          },
+          {
+            "score": 0.50,
+            "label": "Slow Recovery",
+            "criteria": "Agent eventually recovers but takes many attempts or uses workarounds instead of proper fixes.",
+            "evidence_required": "Count recovery attempts and note workarounds vs proper fixes."
+          },
+          {
+            "score": 0.25,
+            "label": "Poor Recovery",
+            "criteria": "Agent gets stuck in error loops, makes things worse, or requires user intervention to recover.",
+            "evidence_required": "Quote error loops or user rescue interventions."
+          },
+          {
+            "score": 0.0,
+            "label": "No Recovery",
+            "criteria": "Agent fails to recover and either gives up or produces broken output.",
+            "evidence_required": "Quote the point where agent gives up or declares broken output as complete."
+          }
+        ],
+        "self_consistency_runs": 3,
+        "variance_threshold": 0.15
+      },
+      "contributes_to_dimension": "correctness",
+      "dimension_weight": 0.30,
+      "required": false,
+      "rationale": "Error recovery separates robust agents from fragile ones"
+    }
+  ]
+}
